@@ -5,6 +5,9 @@ package stefans_libs::RInterface;
 use strict;
 use warnings;
 
+use Cwd;
+use IO::Socket::INET;
+
 =head1 LICENCE
 
   Copyright (C) 2016-11-10 Stefan Lang
@@ -41,7 +44,6 @@ A new lib names stefans_libs::RInterface.
 
 =cut
 
-
 =head1 METHODS
 
 =head2 new ( $hash )
@@ -51,23 +53,135 @@ All entries of the hash will be copied into the objects hash - be careful t use 
 
 =cut
 
-sub new{
+sub new {
 
 	my ( $class, $hash ) = @_;
 
-	my ( $self );
+	my ($self);
 
-	$self = {
-  	};
-  	foreach ( keys %{$hash} ) {
-  		$self-> {$_} = $hash->{$_};
-  	}
+	$self = {};
+	foreach ( keys %{$hash} ) {
+		$self->{$_} = $hash->{$_};
+	}
 
-  	bless $self, $class  if ( $class eq "stefans_libs::RInterface" );
+	$self->{'path'} = Cwd::getcwd() unless ( -d $self->{'path'} );
+	$self->{'processes'} = {};
+	bless $self, $class if ( $class eq "stefans_libs::RInterface" );
 
-  	return $self;
+	return $self;
 
 }
 
+sub init_R_server {
+	my ( $self, $port ) = @_;
+	$port ||= 6011;
+
+	unless ( $self->{'processes'}->{$port} ) {
+		my $file = "$self->{'path'}/server_$port.R";
+		
+		foreach ( map{ "$self->{'path'}/$port$_" } '.input.R', '.input.lock'){
+			unlink( $_) if ( -f $_ );
+		}
+		
+		open( RS, ">$file" )
+		  or die "Could not create the server R script ($file)\n$!\n";
+		
+		print RS
+
+		  "server <- function(){\n"
+		  . "  while(TRUE){\n"
+		  . "        if ( file.exists( '$self->{'path'}/$port.input.R') ) {\n"
+		  . "                while ( file.exists('$self->{'path'}/$port.input.lock') ) {\n"
+		  . "                        sleep( 2 )\n"
+		  . "                }\n"
+		  . "                source( '$self->{'path'}/$port.input.R' )\n"
+		  . "                file.remove('$self->{'path'}/$port.input.R' )\n"
+		  . "        }\n"
+		  . "        Sys.sleep(2)\n" . "  }\n" . "}\n"
+		  . "setwd('$self->{'path'}')\n"
+		  . "server()\n";
+
+		  close(RS);
+
+		$self->{'processes'}->{$port} = undef;
+		if ( $self->{'processes'}->{$port} = fork ) {    # first fork  we are parent
+			return $self;
+		}
+		elsif ( defined $self->{'processes'}->{$port} ) {    # so we are a child
+			exec(
+'/bin/bash -c "DISPLAY=:7 R CMD BATCH --no-save --no-restore --no-readline -- '
+				  . $file
+				  . '"' );
+			exit(0);    # we should never reach this
+		}
+
+		else {
+			die "Error in spawning a new R instance: $!\n";
+		}
+	}
+
+}
+
+sub DESTROY {
+	my $self = shift;
+	foreach ( keys %{ $self->{'processes'} } ) {
+		$self->shut_down_server($_);
+	}
+}
+
+sub shut_down_server {
+	my ( $self, $port ) = @_;
+	$port ||= 6011;
+	$self->send2R( "q('no')", $port );
+	sleep(4);
+	unlink("$self->{'path'}/$port.input.R"); ## this command does not allow the R process to clean up
+
+	#warn "kill -15 ". getpgrp ($self->{'processes'}->{$port})."\n";
+	#kill -15 => getpgrp($self->{'processes'}->{$port});
+	$self->{'processes'}->{$port} = undef;
+}
+
+sub send2R {
+	my ( $self, $message, $port ) = @_;
+	$port ||= 6011;
+	if ( defined $message ) {
+		if ( -f "$self->{'path'}/$port.input.R") {
+			warn "R process is not finished\n";
+			sleep(2);
+		}
+		open ( LOCK, ">$self->{'path'}/$port.input.lock") or die $!;
+		print LOCK "PERL";
+		close ( LOCK );
+		
+		open ( OUT ,">$self->{'path'}/$port.input.R" ) or die $!;
+		print OUT $message."\n";
+		close ( OUT );
+		
+		unlink("$self->{'path'}/$port.input.lock");
+	}
+	return $self;
+}
+
+sub get_socket {
+	my ( $self, $port ) = @_;
+	$port ||= 6011;
+
+	my $socket = IO::Socket::INET->new(
+
+		#	Listen    => 5,
+		LocalAddr => 'localhost',
+		LocalPort => $port,
+		Type      => SOCK_STREAM(),
+		Blocking  => 1,
+	);
+	unless ( defined $socket ) {
+		Carp::confess("I can not connect to loclhost:$port\n$!\n");
+	}
+	Carp::confess($socket);
+
+	#$socket ->bind($port, 'localhost');
+	$socket->autoflush(1);
+	return $socket;
+}
 
 1;
