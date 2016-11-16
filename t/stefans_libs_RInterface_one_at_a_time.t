@@ -21,7 +21,7 @@ system( "ps -Af | grep $OBJ->{'processes'}->{6011}");
 
 ok ( ! -f "$OBJ->{'path'}/output.txt", "R output does not exist" );
 
-$OBJ -> send2R ( 'print ("I got data!")'."\n".'write ("This has really come from the perl process!", file="output.txt")');
+$OBJ -> send_2_R ( 'print ("I got data!")'."\n".'write ("This has really come from the perl process!", file="output.txt")');
 
 ok ( -f "$OBJ->{'path'}/6011.input.R", "message file sent" );
 

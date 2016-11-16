@@ -73,25 +73,34 @@ sub new {
 }
 
 sub port_4_user { 
-	my ( $self, $user, $project, $server_funct ) = @_;
+	my ( $self, $user, $project ) = @_;
 	Carp::confess ( "Need a project name to register an R object!" ) unless ( defined $project);
 	$self->{'users'} ||= {};
 	$self->{'users'}->{$user} ||= {};
 	unless ( $self->{'users'}->{$user}->{$project} ) {
 		$self->{'users'}->{$user}->{$project} = scalar( keys %{$self->{'processes'}} );
-		$self->init_R_server( $self->{'users'}->{$user}->{$project} , $server_funct);
+		$self->init_R_server( $self->{'users'}->{$user}->{$project} );
 	}
 	return $self->{'users'}->{$user}->{$project};
 }
 
 sub init_R_server {
-	my ( $self, $port, $server_funct ) = @_;
+	my ( $self, $port ) = @_;
 	$port = 6011 unless ( defined $port);
-	if ( defined $server_funct ){
-		$server_funct =~ s/##PATH##/$self->{'path'}/g;
-		$server_funct =~ s/##PORT##/$port/g;
-	}else {
-		$server_funct ||= "server <- function(){\n"
+
+	unless ( $self->{'processes'}->{$port} ) {
+		my $file = "$self->{'path'}/server_$port.R";
+		
+		foreach ( map{ "$self->{'path'}/$port$_" } '.input.R', '.input.lock'){
+			unlink( $_) if ( -f $_ );
+		}
+		
+		open( RS, ">$file" )
+		  or die "Could not create the server R script ($file)\n$!\n";
+		
+		print RS
+
+		  "server <- function(){\n"
 		  . "  while(TRUE){\n"
 		  . "        if ( file.exists( '$self->{'path'}/$port.input.R') ) {\n"
 		  . "                while ( file.exists('$self->{'path'}/$port.input.lock') ) {\n"
@@ -103,19 +112,6 @@ sub init_R_server {
 		  . "        Sys.sleep(2)\n" . "  }\n" . "}\n"
 		  . "setwd('$self->{'path'}')\n"
 		  . "server()\n";
-	}
-	
-	unless ( $self->{'processes'}->{$port} ) {
-		my $file = "$self->{'path'}/server_$port.R";
-		
-		foreach ( map{ "$self->{'path'}/$port$_" } '.input.R', '.input.lock'){
-			unlink( $_) if ( -f $_ );
-		}
-		
-		open( RS, ">$file" )
-		  or die "Could not create the server R script ($file)\n$!\n";
-		
-		print RS $server_funct;
 
 		  close(RS);
 

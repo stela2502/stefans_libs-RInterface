@@ -23,7 +23,7 @@ system( "ps -Af | grep $OBJ->{'processes'}->{$port}");
 
 ok ( ! -f "$OBJ->{'path'}/output.txt", "R output does not exist" );
 
-$OBJ -> send2R ( 'print ("I got data!")'."\n".'write ("This has really come from the perl process!", file="'.$port.'.output.txt")', $port);
+$OBJ -> send_2_R ( 'print ("I got data!")'."\n".'write ("This has really come from the perl process!", file="'.$port.'.output.txt")', $port);
 
 ok ( -f "$OBJ->{'path'}/$port.input.R", "message file sent" );
 
@@ -41,7 +41,7 @@ system( "ps -Af | grep $OBJ->{'processes'}->{$port}");
 
 ok ( ! -f "$OBJ->{'path'}/output.txt", "R output does not exist" );
 
-$OBJ -> send2R ( 'print ("I got data!")'."\n".'write ("This has really come from the perl process!", file="'.$port.'.output.txt")', $port);
+$OBJ -> send_2_R ( 'print ("I got data!")'."\n".'write ("This has really come from the perl process!", file="'.$port.'.output.txt")', $port);
 
 ok ( -f "$OBJ->{'path'}/$port.input.R", "message file sent" );
 
