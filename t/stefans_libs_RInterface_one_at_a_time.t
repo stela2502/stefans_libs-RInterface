@@ -1,7 +1,7 @@
 #! /usr/bin/perl
 use strict;
 use warnings;
-use Test::More tests => 6;
+use Test::More tests => 8;
 BEGIN { use_ok 'stefans_libs::RInterface' }
 
 use FindBin;
@@ -30,6 +30,13 @@ sleep( 3);
 ok ( ! -f "$OBJ->{'path'}/6011.input.R", "message file processed by R" );
 
 ok ( -f "$OBJ->{'path'}/output.txt", "R output created" );
+
+ok ($OBJ ->is_running(), "server is active"); 
+
+$OBJ ->shut_down_server();
+
+ok ( !$OBJ ->is_running(), "server is shut down"); 
+
 
 $OBJ ->shut_down_server();
 

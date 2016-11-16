@@ -10,12 +10,10 @@ author 'Whoever you are <your email>';
 
 #requires	'DBI' => 0;
 requires	'IO::Socket::INET' => 0;
-opendir( DIR, 'bin/' ) or die "I could not open the bin folder
-$!
-";
-map { install_script "bin/$_" } grep !/^./,  grep '*.pl', readdir(DIR);
-close ( DIR );
+opendir( DIR, 'bin/' ) or die "I could not open the bin folder\n$!\n";
 
+map { install_script( "bin/$_" ) } grep /^\w/,  grep '*.pl', readdir(DIR);
+close ( DIR );
 
 auto_install();
 WriteAll();

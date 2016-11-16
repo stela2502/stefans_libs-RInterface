@@ -63,8 +63,12 @@ sub new {
 	foreach ( keys %{$hash} ) {
 		$self->{$_} = $hash->{$_};
 	}
+	unless ( -d $self->{'path'} ) {
+		$self->{'path'} = Cwd::getcwd();
+		warn ref($self)
+		  . "::new I need to set the path to $self->{'path'}\n$!\n";
 
-	$self->{'path'} = Cwd::getcwd() unless ( -d $self->{'path'} );
+	}
 	$self->{'processes'} = {};
 	bless $self, $class if ( $class eq "stefans_libs::RInterface" );
 
@@ -72,26 +76,31 @@ sub new {
 
 }
 
-sub port_4_user { 
+sub port_4_user {
 	my ( $self, $user, $project, $server_funct ) = @_;
-	Carp::confess ( "Need a project name to register an R object!" ) unless ( defined $project);
+	Carp::confess("Need a project name to register an R object!")
+	  unless ( defined $project );
 	$self->{'users'} ||= {};
 	$self->{'users'}->{$user} ||= {};
 	unless ( $self->{'users'}->{$user}->{$project} ) {
-		$self->{'users'}->{$user}->{$project} = scalar( keys %{$self->{'processes'}} );
-		$self->init_R_server( $self->{'users'}->{$user}->{$project} , $server_funct);
+		$self->{'users'}->{$user}->{$project} =
+		  scalar( keys %{ $self->{'processes'} } );
+		$self->init_R_server( $self->{'users'}->{$user}->{$project},
+			$server_funct );
 	}
 	return $self->{'users'}->{$user}->{$project};
 }
 
 sub init_R_server {
 	my ( $self, $port, $server_funct ) = @_;
-	$port = 6011 unless ( defined $port);
-	if ( defined $server_funct ){
+	$port = 6011 unless ( defined $port );
+	if ( defined $server_funct ) {
 		$server_funct =~ s/##PATH##/$self->{'path'}/g;
 		$server_funct =~ s/##PORT##/$port/g;
-	}else {
-		$server_funct ||= "server <- function(){\n"
+	}
+	else {
+		$server_funct ||=
+		    "server <- function(){\n"
 		  . "  while(TRUE){\n"
 		  . "        if ( file.exists( '$self->{'path'}/$port.input.R') ) {\n"
 		  . "                while ( file.exists('$self->{'path'}/$port.input.lock') ) {\n"
@@ -104,39 +113,48 @@ sub init_R_server {
 		  . "setwd('$self->{'path'}')\n"
 		  . "server()\n";
 	}
-	
+
 	unless ( $self->{'processes'}->{$port} ) {
 		my $file = "$self->{'path'}/server_$port.R";
-		
-		foreach ( map{ "$self->{'path'}/$port$_" } '.input.R', '.input.lock'){
-			unlink( $_) if ( -f $_ );
+
+		foreach ( map { "$self->{'path'}/$port$_" } '.input.R', '.input.lock' )
+		{
+			unlink($_) if ( -f $_ );
 		}
-		
+
 		open( RS, ">$file" )
 		  or die "Could not create the server R script ($file)\n$!\n";
-		
+
 		print RS $server_funct;
 
-		  close(RS);
-
-		$self->{'processes'}->{$port} = undef;
-		if ( $self->{'processes'}->{$port} = fork ) {    # first fork  we are parent
-			return $self;
-		}
-		elsif ( defined $self->{'processes'}->{$port} ) {    # so we are a child
-			warn  "I am starting the R interface $self->{'processes'}->{$port} using file $file\n";
-			exec(
-'/bin/bash -c "DISPLAY=:7 R CMD BATCH --no-save --no-restore --no-readline -- '
-				  . $file
-				  . '"' );
-			exit(0);    # we should never reach this
-		}
-
-		else {
-			die "Error in spawning a new R instance: $!\n";
-		}
+		close(RS);
+		
+		$self->spawn_R( $port );
 	}
 
+}
+
+sub spawn_R {
+	my ( $self, $port ) = @_;
+	my $file = "$self->{'path'}/server_$port.R";
+	$self->{'processes'}->{$port} = undef;
+	if ( $self->{'processes'}->{$port} = fork ) {    # first fork  we are parent
+		return $self;
+	}
+	elsif ( defined $self->{'processes'}->{$port} ) {    # so we are a child
+		warn
+"I am starting the R interface $self->{'processes'}->{$port} using file $file\n";
+		exec(
+'/bin/bash -c "DISPLAY=:7 R CMD BATCH --no-save --no-restore --no-readline -- '
+			  . $file
+			  . '"' );
+		exit(0);    # we should never reach this
+	}
+
+	else {
+		die "Error in spawning a new R instance: $!\n";
+	}
+	return $self;
 }
 
 sub DESTROY {
@@ -148,40 +166,61 @@ sub DESTROY {
 
 sub shut_down_server {
 	my ( $self, $port ) = @_;
-	$port = 6011 unless ( defined $port);
-	$self->send_2_R( "q('yes')", $port );
-	sleep(4);
-	unlink("$self->{'path'}/$port.input.R"); ## this command does not allow the R process to clean up
+	$port = 6011 unless ( defined $port );
+	if ( defined $self->{'processes'}->{$port} ) {
+		$self->send_2_R( "q('yes')", $port );
+		sleep(4);
+		unlink("$self->{'path'}/$port.input.R")
+		  ;    ## this command does not allow the R process to clean up
 
-	#warn "kill -15 ". getpgrp ($self->{'processes'}->{$port})."\n";
-	#kill -15 => getpgrp($self->{'processes'}->{$port});
-	$self->{'processes'}->{$port} = undef;
+		#warn "kill -15 ". getpgrp ($self->{'processes'}->{$port})."\n";
+		#kill -15 => getpgrp($self->{'processes'}->{$port});
+		$self->{'processes'}->{$port} = undef;
+	}
 }
 
 sub send_2_R {
 	my ( $self, $message, $port ) = @_;
-	$port = 6011 unless ( defined $port);
+	$port = 6011 unless ( defined $port );
 	if ( defined $message ) {
-		while ( -f "$self->{'path'}/$port.input.R") {
+		while ( -f "$self->{'path'}/$port.input.R" ) {
 			warn "R process is not finished\n";
 			sleep(2);
 		}
-		open ( LOCK, ">$self->{'path'}/$port.input.lock") or die $!;
+		open( LOCK, ">$self->{'path'}/$port.input.lock" ) or die $!;
 		print LOCK "PERL";
-		close ( LOCK );
-		
-		open ( OUT ,">$self->{'path'}/$port.input.R" ) or die $!;
-		print OUT $message."\n";
-		close ( OUT );
-		
+		close(LOCK);
+
+		open( OUT, ">$self->{'path'}/$port.input.R" ) or die $!;
+		print OUT $message . "\n";
+		close(OUT);
+
 		unlink("$self->{'path'}/$port.input.lock");
 	}
 	return $self;
 }
 
+sub is_running {
+	my ( $self, $port ) = @_;
+	$port = 6011 unless ( defined $port );
+	open( IN, "ps -Af | grep server_$port.R |" )
+	  or die "could not start pipe\n$!\n";
+	my @in = <IN>;
+	warn join("",@in)."\n";
+	if ( scalar( @in ) >= 2 ) {
+		#warn "server has crashed?!\n";
+		map {
+			unlink( $self->{'path'} . "/$_" )
+			  if ( -f $self->{'path'} . "/$_" )
+		} "$port.input.lock", "$port.input.R";
+		return 0;
+	}
+	return 1;
+}
+
 sub get_socket {
 	my ( $self, $port ) = @_;
-	$port = 6011 unless ( defined $port);
+	$port = 6011 unless ( defined $port );
 
 	my $socket = IO::Socket::INET->new(
 
