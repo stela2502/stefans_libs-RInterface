@@ -65,8 +65,8 @@ sub new {
 	}
 	unless ( -d $self->{'path'} ) {
 		$self->{'path'} = Cwd::getcwd();
-		warn ref($self)
-		  . "::new I need to set the path to $self->{'path'}\n$!\n";
+		Carp::confess ( ref($self)
+		  . "::new I need to set the path to $self->{'path'}\n$!\n");
 
 	}
 	$self->{'processes'} = {};
@@ -136,7 +136,9 @@ sub init_R_server {
 
 sub spawn_R {
 	my ( $self, $port ) = @_;
+	$port = 6011 unless ( defined $port );
 	my $file = "$self->{'path'}/server_$port.R";
+	return $self if ( $self->is_running($port) );
 	$self->{'processes'}->{$port} = undef;
 	if ( $self->{'processes'}->{$port} = fork ) {    # first fork  we are parent
 		return $self;
@@ -183,8 +185,8 @@ sub send_2_R {
 	my ( $self, $message, $port ) = @_;
 	$port = 6011 unless ( defined $port );
 	if ( defined $message ) {
-		while ( -f "$self->{'path'}/$port.input.R" ) {
-			warn "R process is not finished\n";
+		while ( -f "$self->{'path'}/$port.input.lock" ) {
+			warn "R process $port is not finished\n";
 			sleep(2);
 		}
 		open( LOCK, ">$self->{'path'}/$port.input.lock" ) or die $!;
@@ -206,14 +208,17 @@ sub is_running {
 	open( IN, "ps -Af | grep server_$port.R |" )
 	  or die "could not start pipe\n$!\n";
 	my @in = <IN>;
-	warn join("",@in)."\n";
-	if ( scalar( @in ) >= 2 ) {
+#	warn join("",@in)."\n";
+	if ( scalar( @in ) <= 2 ) {
 		#warn "server has crashed?!\n";
 		map {
 			unlink( $self->{'path'} . "/$_" )
 			  if ( -f $self->{'path'} . "/$_" )
 		} "$port.input.lock", "$port.input.R";
 		return 0;
+	}
+	if ( scalar(@in) > 5 ) {
+		Carp::confess ( "Multiple server instances spawned - should absolutely not happen!\n".join('', @in) );
 	}
 	return 1;
 }

@@ -162,6 +162,7 @@ sub spawn_R {
 sub DESTROY {
 	my $self = shift;
 	foreach ( keys %{ $self->{'processes'} } ) {
+		warn "I am sending the shut down message to server $_\n";
 		$self->shut_down_server($_);
 	}
 }
@@ -185,19 +186,20 @@ sub send_2_R {
 	my ( $self, $message, $port ) = @_;
 	$port = 6011 unless ( defined $port );
 	if ( defined $message ) {
-		while ( -f "$self->{'path'}/$port.input.lock" ) {
+		while ( -f "$self->{'path'}/$port.input.R" ) { ## server removes input script if finished with it
 			warn "R process $port is not finished\n";
 			sleep(2);
 		}
+	#	warn "Set lock file $self->{'path'}/$port.input.lock\n";
 		open( LOCK, ">$self->{'path'}/$port.input.lock" ) or die $!;
 		print LOCK "PERL";
 		close(LOCK);
-
+	#	warn "lock file exists? :".(-f "$self->{'path'}/$port.input.lock")."\n";
 		open( OUT, ">$self->{'path'}/$port.input.R" ) or die $!;
 		print OUT $message . "\n";
 		close(OUT);
-
 		unlink("$self->{'path'}/$port.input.lock");
+	#	warn "lock file removed\nscript:\n$message\n";
 	}
 	return $self;
 }
@@ -208,7 +210,8 @@ sub is_running {
 	open( IN, "ps -Af | grep server_$port.R |" )
 	  or die "could not start pipe\n$!\n";
 	my @in = <IN>;
-	warn join("",@in)."\n";
+	close ( IN );
+#	warn join("",@in)."\n";
 	if ( scalar( @in ) <= 2 ) {
 		#warn "server has crashed?!\n";
 		map {
